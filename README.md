@@ -38,15 +38,18 @@ irm https://raw.githubusercontent.com/Panmax/claude-check/main/claude_check.py |
 | 1 | 🔌 **代理环境变量** | 检查 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` 是否配置 | 提示 |
 | 2 | 🌐 **IPv6 泄漏** | 多目标探测 IPv6 出口连通性，防止真实 IP 绕过代理裸奔 | 🔴 高危 |
 | 3 | 🧭 **DNS 泄漏** | 检测 DNS 出口是否泄漏到国内节点 | 🔴 高危 |
-| 4 | 🕒 **时区匹配** | 对比本机系统时区与代理出口 IP 所在时区 | 🔴 高危 |
-| 5 | 🌍 **语言匹配** | 对比系统语言与出口 IP 所在国家常用语言 | 🟡 中危 |
-| 6 | 📊 **IP 质量** | 判定出口 IP 是家宽/原生 ISP 还是商用机房/代理节点 | 🟡 中危 |
-| 7 | 🎯 **Cloudflare Trace** | 通过 claude.ai CDN trace 获取 Claude 实际看到的 IP，对比检测分流泄漏 | 🟡 中危 |
-| 8 | 🛡️ **Cloudflare WAF** | 探测 claude.ai 是否对当前 IP 发起人机验证或拦截 | 🔴 高危 |
+| 4 | 🕒 **时区匹配** | 对比本机系统时区与 Claude 实际出口 IP 所在时区 | 🔴 高危 |
+| 5 | 🌍 **语言匹配** | 对比系统语言与 Claude 实际出口 IP 所在国家常用语言 | 🟡 中危 |
+| 6 | 📊 **IP 质量** | 判定 Claude 实际出口 IP 是家宽/原生 ISP 还是商用机房/代理节点 | 🟡 中危 |
+| 7 | 🎯 **Cloudflare Trace** | 通过 claude.ai CDN trace 获取 Claude 实际看到的 IP，作为 IP 质量/时区/语言检测的参照（封禁实际打在这个 IP 上），并对比默认路由出口检测分流泄漏 | 🟡 中危 |
+| 8 | 🛡️ **Cloudflare WAF** | 按 `cf-mitigated` 头区分「硬拦截」(浏览器也过不去，🔴 高危) 与「JS Challenge」(curl 无浏览器指纹必被挑战，浏览器通常自动通过，🟡 软提示) | 🔴/🟡 |
 | 9 | 🔗 **API 连通性** | 逆向探测 Anthropic API 是否对当前 IP 硬封锁 | 🔴 高危 |
 | 10 | ⏱️ **延迟测试** | 测量到 claude.ai 和 api.anthropic.com 的响应延迟 | 参考 |
 | 11 | 📡 **服务状态** | 集成 Anthropic 官方 Status 页面，区分「你的问题」还是「官方的问题」 | 参考 |
-| 12 | 🔒 **信任评分** | 0-100 量化评分 + 进度条可视化 + 综合风险等级 | 总评 |
+| 12 | 🔁 **会话稳定性** | 连续 3 次 trace 采样，检测同会话内出口 IP 是否漂移（多出口/轮换易触发风控） | 🟡 中危 |
+| 13 | 🧬 **深度 IP 信誉** | ipinfo.io privacy 判定 + AbuseIPDB 滥用投诉计数（需免费 key，见下） | 🟡 中危 |
+| 14 | 🌐 **真实浏览器验证** (`--browser-check`) | 用 Playwright 起独立无头 Chromium（全新 profile ≈ 无痕，不碰你的浏览器登录态）过 Cloudflare JS 盾 + WebRTC srflx 泄漏检测 | 🔴/✅ |
+| 15 | 🔒 **信任评分** | 0-100 量化评分 + 进度条可视化 + 综合风险等级 | 总评 |
 
 ## 📸 输出示例
 
@@ -63,19 +66,20 @@ irm https://raw.githubusercontent.com/Panmax/claude-check/main/claude_check.py |
   🕒 本机系统时区: PST (UTC-8.0)
   🌍 本机系统语言: en
 
-[*] 2. 落地 IP 质量与环境匹配度 (IP Quality & Fingerprint Match)
+[*] 2. Cloudflare Trace 真实出口 IP (Claude 视角)
+  🎯 Claude 看到的 IP: 203.x.x.x
+  📍 Cloudflare 边缘 : LAX (US)
+
+[*] 3. 落地 IP 质量与环境匹配度 (IP Quality & Fingerprint Match)
+  👁 Claude 实际出口: 203.x.x.x (本机默认路由出口为 203.x.x.x，以下按 Claude 视角检测)
   📍 物理位置: United States (US) - Los Angeles
   🌐 出口 IP : 203.x.x.x
   🏢 归属 ASN: AS12345 Example ISP
   📡 运营商  : Example ISP
   ✅ IP 质量优秀: 检测为 [真实家庭宽带/原生ISP] -> 适合防封
-  ✅ 时区匹配：本机时区与代理出口 IP 时区完全一致: America/Los_Angeles (UTC-8.0)
+  ✅ 时区匹配：本机时区与出口 IP 时区完全一致: America/Los_Angeles (UTC-8.0)
   ✅ 语言匹配：系统语言 (en) 与出口地区 (US) 一致
-
-[*] 3. Cloudflare Trace 真实出口 IP (Claude 视角)
-  🎯 Claude 看到的 IP: 203.x.x.x
-  📍 Cloudflare 边缘 : LAX (US)
-  ✅ IP 一致：ip-api (203.x.x.x) = Cloudflare (203.x.x.x)，无分流泄漏
+  ✅ IP 一致：默认出口 (203.x.x.x) = Claude 出口 (203.x.x.x)，无分流泄漏
 
 [*] 4. 探测 Claude 前端 Web 盾防御策略 (Cloudflare WAF Check)
   ✅ 网页直连通过: 无 Cloudflare 人机拦截，Web 盾前置放行！
@@ -117,10 +121,16 @@ irm https://raw.githubusercontent.com/Panmax/claude-check/main/claude_check.py |
 用法: python3 claude_check.py [选项]
 
 选项:
-  --skip-api     跳过 Anthropic API 连通性检测
-  --skip-web     跳过 Cloudflare WAF 检测
-  --json         以 JSON 格式输出（适合脚本集成和自动化）
-  --no-color     禁用彩色输出（管道输出时自动禁用）
+  --skip-api       跳过 Anthropic API 连通性检测
+  --skip-web       跳过 Cloudflare WAF 检测
+  --browser-check  用 Playwright 起独立无头 Chromium 做真实浏览器 WAF 验证 + WebRTC 泄漏检测
+                   （需: pip3 install playwright && python3 -m playwright install chromium）
+  --json           以 JSON 格式输出（适合脚本集成和自动化）
+  --no-color       禁用彩色输出（管道输出时自动禁用）
+
+可选环境变量（解锁深度信誉数据，两者均可免费注册获取）:
+  IPINFO_TOKEN   ipinfo.io 访问令牌 → privacy 判定 (VPN/代理/Tor/机房)
+  ABUSEIPDB_KEY  AbuseIPDB 密钥    → 滥用投诉计数与置信度
 ```
 
 **示例：**
